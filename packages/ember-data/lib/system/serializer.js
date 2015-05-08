@@ -23,6 +23,16 @@
 */
 
 var Serializer = Ember.Object.extend({
+
+  /**
+    This is only to be used temporarily during transition from the old
+    serializer API to the new one.
+
+    @property isNewSerializerAPI
+    @private
+  */
+  isNewSerializerAPI: false,
+
   /**
     The `store` property is the application's `store` that contains all records.
     It's injected as a service.

@@ -26,6 +26,12 @@ import {
 } from "ember-data/system/store/common";
 
 import {
+  convertResourceObject,
+  normalizeResponseHelper,
+  pushPayload
+} from "ember-data/system/store/serializer-response";
+
+import {
   serializerForAdapter
 } from "ember-data/system/store/serializers";
 
@@ -1581,16 +1587,24 @@ Store = Service.extend({
     @method push
     @param {(String|DS.Model)} modelName
     @param {Object} data
-    @return {DS.Model} the record that was created or
+    @return {DS.Model|Array} the record(s) that was created or
       updated.
   */
   push: function(modelName, data) {
     var internalModel = this._pushInternalModel(modelName, data);
+    if (Ember.isArray(internalModel)) {
+      return map(internalModel, (item) => {
+        return item.getRecord();
+      });
+    }
     return internalModel.getRecord();
   },
 
   _pushInternalModel: function(modelName, data) {
-    Ember.assert("Expected an object as `data` in a call to `push` for " + modelName + " , but was " + data, Ember.typeOf(data) === 'object');
+    if (Ember.typeOf(modelName) === 'object' && Ember.typeOf(data) === 'undefined') {
+      return pushPayload(this, modelName);
+    }
+    Ember.assert("Expected an object as `data` in a call to `push` for " + modelName + " , but was " + Ember.typeOf(data), Ember.typeOf(data) === 'object');
     Ember.assert("You must include an `id` for " + modelName + " in an object passed to `push`", data.id != null && data.id !== '');
 
     var type = this.modelFor(modelName);
@@ -2056,13 +2070,13 @@ function _commit(adapter, store, operation, snapshot) {
   promise = _guard(promise, _bind(_objectIsAlive, record));
 
   return promise.then(function(adapterPayload) {
-    var payload;
-
     store._adapterRun(function() {
+      var payload, data;
       if (adapterPayload) {
-        payload = serializer.extract(store, type, adapterPayload, snapshot.id, operation);
+        payload = normalizeResponseHelper(serializer, store, type, adapterPayload, snapshot.id, operation);
+        data = convertResourceObject(payload.data);
       }
-      store.didSaveRecord(record, payload);
+      store.didSaveRecord(record, data);
     });
 
     return record;
