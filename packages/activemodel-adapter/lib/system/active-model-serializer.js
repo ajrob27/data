@@ -132,6 +132,10 @@ var ActiveModelSerializer = RESTSerializer.extend({
     }
   },
 
+  keyForLink: function(key, relationshipKind) {
+    return camelize(key);
+  },
+
   /*
     Does not serialize hasMany relationships by default.
   */
@@ -208,7 +212,11 @@ var ActiveModelSerializer = RESTSerializer.extend({
 
   normalize: function(typeClass, hash, prop) {
     this.normalizeLinks(hash);
+    return this._super(typeClass, hash, prop);
+  },
 
+  newNormalize: function(typeClass, hash, prop) {
+    this.normalizeLinks(hash);
     return this._super(typeClass, hash, prop);
   },
 

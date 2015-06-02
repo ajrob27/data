@@ -118,6 +118,7 @@ DS.BooleanTransform = BooleanTransform;
 
 DS.ActiveModelAdapter    = ActiveModelAdapter;
 DS.ActiveModelSerializer = ActiveModelSerializer;
+
 DS.EmbeddedRecordsMixin  = EmbeddedRecordsMixin;
 
 DS.belongsTo = belongsTo;
