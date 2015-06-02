@@ -1,3 +1,5 @@
+var get = Ember.get;
+var set = Ember.set;
 var forEach = Ember.EnumerableUtils.forEach;
 var camelize = Ember.String.camelize;
 
@@ -91,6 +93,16 @@ var camelize = Ember.String.camelize;
 */
 var EmbeddedRecordsMixin = Ember.Mixin.create({
 
+  init: function() {
+    this._super.apply(this, arguments);
+
+    if (this.get('isNewSerializerAPI')) {
+      this._extractEmbeddedRecords = this._newExtractEmbeddedRecords;
+      this._extractEmbeddedBelongsTo = this._newExtractEmbeddedBelongsTo;
+      this._extractEmbeddedHasMany = this._newExtractEmbeddedHasMany;
+    }
+  },
+
   /**
     Normalize the record and recursively normalize/extract all the embedded records
     while pushing them into the store as they are encountered
@@ -120,7 +132,12 @@ var EmbeddedRecordsMixin = Ember.Mixin.create({
   **/
   normalize: function(typeClass, hash, prop) {
     var normalizedHash = this._super(typeClass, hash, prop);
-    return extractEmbeddedRecords(this, this.store, typeClass, normalizedHash);
+    return this._extractEmbeddedRecords(this, this.store, typeClass, normalizedHash);
+  },
+
+  newNormalize: function(typeClass, hash, prop) {
+    var normalizedHash = this._super(typeClass, hash, prop);
+    return this._extractEmbeddedRecords(this, this.store, typeClass, normalizedHash);
   },
 
   keyForRelationship: function(key, typeClass, method) {
@@ -385,106 +402,169 @@ var EmbeddedRecordsMixin = Ember.Mixin.create({
   attrsOption: function(attr) {
     var attrs = this.get('attrs');
     return attrs && (attrs[camelize(attr)] || attrs[attr]);
-  }
-});
+  },
 
-// chooses a relationship kind to branch which function is used to update payload
-// does not change payload if attr is not embedded
-function extractEmbeddedRecords(serializer, store, typeClass, partial) {
+  _extractEmbeddedRecords: function(serializer, store, typeClass, partial) {
 
-  typeClass.eachRelationship(function(key, relationship) {
-    if (serializer.hasDeserializeRecordsOption(key)) {
-      var embeddedTypeClass = store.modelFor(relationship.type.modelName);
-      if (relationship.kind === "hasMany") {
-        if (relationship.options.polymorphic) {
-          extractEmbeddedHasManyPolymorphic(store, key, partial);
-        } else {
-          extractEmbeddedHasMany(store, key, embeddedTypeClass, partial);
+    typeClass.eachRelationship(function(key, relationship) {
+      if (serializer.hasDeserializeRecordsOption(key)) {
+        var embeddedTypeClass = store.modelFor(relationship.type);
+        if (relationship.kind === "hasMany") {
+          if (relationship.options.polymorphic) {
+            this._extractEmbeddedHasManyPolymorphic(store, key, partial);
+          } else {
+            this._extractEmbeddedHasMany(store, key, embeddedTypeClass, partial);
+          }
+        }
+        if (relationship.kind === "belongsTo") {
+          if (relationship.options.polymorphic) {
+            this._extractEmbeddedBelongsToPolymorphic(store, key, partial);
+          } else {
+            this._extractEmbeddedBelongsTo(store, key, embeddedTypeClass, partial);
+          }
         }
       }
-      if (relationship.kind === "belongsTo") {
-        if (relationship.options.polymorphic) {
-          extractEmbeddedBelongsToPolymorphic(store, key, partial);
-        } else {
-          extractEmbeddedBelongsTo(store, key, embeddedTypeClass, partial);
-        }
-      }
+    }, this);
+
+    return partial;
+  },
+
+  _extractEmbeddedHasMany: function(store, key, embeddedTypeClass, hash) {
+    if (!hash[key]) {
+      return hash;
     }
-  });
 
-  return partial;
-}
+    var ids = [];
 
-// handles embedding for `hasMany` relationship
-function extractEmbeddedHasMany(store, key, embeddedTypeClass, hash) {
-  if (!hash[key]) {
+    var embeddedSerializer = store.serializerFor(embeddedTypeClass.modelName);
+    forEach(hash[key], function(data) {
+      var embeddedRecord = embeddedSerializer.normalize(embeddedTypeClass, data, null);
+      store.push(embeddedTypeClass.modelName, embeddedRecord);
+      ids.push(embeddedRecord.id);
+    });
+
+    hash[key] = ids;
     return hash;
-  }
+  },
 
-  var ids = [];
+  _extractEmbeddedHasManyPolymorphic: function(store, key, hash) {
+    if (!hash[key]) {
+      return hash;
+    }
 
-  var embeddedSerializer = store.serializerFor(embeddedTypeClass.modelName);
-  forEach(hash[key], function(data) {
-    var embeddedRecord = embeddedSerializer.normalize(embeddedTypeClass, data, null);
-    store.push(embeddedTypeClass, embeddedRecord);
-    ids.push(embeddedRecord.id);
-  });
+    var ids = [];
 
-  hash[key] = ids;
-  return hash;
-}
+    forEach(hash[key], function(data) {
+      var modelName = data.type;
+      var embeddedSerializer = store.serializerFor(modelName);
+      var embeddedTypeClass = store.modelFor(modelName);
+      // var primaryKey = embeddedSerializer.get('primaryKey');
 
-function extractEmbeddedHasManyPolymorphic(store, key, hash) {
-  if (!hash[key]) {
+      var embeddedRecord = embeddedSerializer.normalize(embeddedTypeClass, data, null);
+      store.push(embeddedTypeClass.modelName, embeddedRecord);
+      ids.push({ id: embeddedRecord.id, type: modelName });
+    });
+
+    hash[key] = ids;
     return hash;
-  }
+  },
 
-  var ids = [];
+  _extractEmbeddedBelongsTo: function(store, key, embeddedTypeClass, hash) {
+    if (!hash[key]) {
+      return hash;
+    }
 
-  forEach(hash[key], function(data) {
+    var embeddedSerializer = store.serializerFor(embeddedTypeClass.modelName);
+    var embeddedRecord = embeddedSerializer.normalize(embeddedTypeClass, hash[key], null);
+    store.push(embeddedTypeClass.modelName, embeddedRecord);
+
+    hash[key] = embeddedRecord.id;
+    //TODO Need to add a reference to the parent later so relationship works between both `belongsTo` records
+    return hash;
+  },
+
+  _extractEmbeddedBelongsToPolymorphic: function(store, key, hash) {
+    if (!hash[key]) {
+      return hash;
+    }
+
+    var data = hash[key];
     var modelName = data.type;
     var embeddedSerializer = store.serializerFor(modelName);
     var embeddedTypeClass = store.modelFor(modelName);
 
     var embeddedRecord = embeddedSerializer.normalize(embeddedTypeClass, data, null);
-    store.push(embeddedTypeClass, embeddedRecord);
-    ids.push({ id: embeddedRecord.id, type: modelName });
-  });
+    store.push(embeddedTypeClass.modelName, embeddedRecord);
 
-  hash[key] = ids;
-  return hash;
-}
-
-function extractEmbeddedBelongsTo(store, key, embeddedTypeClass, hash) {
-  if (!hash[key]) {
+    hash[key] = embeddedRecord.id;
+    hash[key + 'Type'] = modelName;
     return hash;
+  },
+
+  _newExtractEmbeddedRecords: function(serializer, store, typeClass, partial) {
+    typeClass.eachRelationship((key, relationship) => {
+      if (serializer.hasDeserializeRecordsOption(key)) {
+        let embeddedTypeClass = store.modelFor(relationship.type.modelName);
+        if (relationship.kind === "hasMany") {
+          this._extractEmbeddedHasMany(store, key, embeddedTypeClass, partial, relationship);
+        }
+        if (relationship.kind === "belongsTo") {
+          this._extractEmbeddedBelongsTo(store, key, embeddedTypeClass, partial, relationship);
+        }
+      }
+    }, this);
+    return partial;
+  },
+
+  _newExtractEmbeddedHasMany: function(store, key, typeClass, hash, relationshipMeta) {
+    let relationshipHash = get(hash, `data.relationships.${key}.data`);
+    if (!relationshipHash) {
+      return;
+    }
+
+    let hasMany = relationshipHash.map(item => {
+      let embeddedTypeClass = typeClass;
+      if (relationshipMeta.options.polymorphic) {
+        let modelName = item.type;
+        embeddedTypeClass = store.modelFor(modelName);
+      }
+
+      let embeddedSerializer = store.serializerFor(embeddedTypeClass.modelName);
+      let { data, included } = embeddedSerializer.normalize(embeddedTypeClass, item, null);
+      hash.included = hash.included || [];
+      hash.included.push(data);
+      hash.included.push(...included);
+
+      return { id: data.id, type: embeddedTypeClass.modelName };
+    });
+
+    let relationship = { data: hasMany };
+    set(hash, `data.relationships.${key}`, relationship);
+  },
+
+  _newExtractEmbeddedBelongsTo: function(store, key, typeClass, hash, relationshipMeta) {
+    let relationshipHash = get(hash, `data.relationships.${key}.data`);
+    if (!relationshipHash) {
+      return;
+    }
+
+    let embeddedTypeClass = typeClass;
+    if (relationshipMeta.options.polymorphic) {
+      let modelName = relationshipHash.type;
+      embeddedTypeClass = store.modelFor(modelName);
+    }
+
+    let embeddedSerializer = store.serializerFor(embeddedTypeClass.modelName);
+    let { data, included } = embeddedSerializer.normalize(embeddedTypeClass, relationshipHash, null);
+    hash.included = hash.included || [];
+    hash.included.push(data);
+    hash.included.push(...included);
+
+    let belongsTo = { id: data.id, type: embeddedTypeClass.modelName };
+
+    let relationship = { data: belongsTo };
+    set(hash, `data.relationships.${key}`, relationship);
   }
-
-  var embeddedSerializer = store.serializerFor(embeddedTypeClass.modelName);
-  var embeddedRecord = embeddedSerializer.normalize(embeddedTypeClass, hash[key], null);
-  store.push(embeddedTypeClass, embeddedRecord);
-
-  hash[key] = embeddedRecord.id;
-  //TODO Need to add a reference to the parent later so relationship works between both `belongsTo` records
-  return hash;
-}
-
-function extractEmbeddedBelongsToPolymorphic(store, key, hash) {
-  if (!hash[key]) {
-    return hash;
-  }
-
-  var data = hash[key];
-  var modelName = data.type;
-  var embeddedSerializer = store.serializerFor(modelName);
-  var embeddedTypeClass = store.modelFor(modelName);
-
-  var embeddedRecord = embeddedSerializer.normalize(embeddedTypeClass, data, null);
-  store.push(embeddedTypeClass, embeddedRecord);
-
-  hash[key] = embeddedRecord.id;
-  hash[key + 'Type'] = modelName;
-  return hash;
-}
+});
 
 export default EmbeddedRecordsMixin;
