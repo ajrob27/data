@@ -1,4 +1,5 @@
 import Serializer from "ember-data/system/serializer";
+import coerceId from "ember-data/system/coerce-id";
 
 var get = Ember.get;
 var isNone = Ember.isNone;
@@ -22,6 +23,13 @@ var merge = Ember.merge;
   @extends DS.Serializer
 */
 export default Serializer.extend({
+
+  init: function() {
+    if (this.get('isNewSerializerAPI')) {
+      this.normalize = this.newNormalize;
+    }
+  },
+
   /**
     The primaryKey is used when serializing and deserializing
     data. Ember Data always uses the `id` property to store the id of
@@ -124,6 +132,101 @@ export default Serializer.extend({
     return data;
   },
 
+  normalizeResponse: function(store, primaryTypeClass, payload, id, requestType) {
+    switch (requestType) {
+      case 'find':
+        return this.normalizeFindResponse(...arguments);
+      case 'findAll':
+        return this.normalizeFindAllResponse(...arguments);
+      case 'findBelongsTo':
+        return this.normalizeFindBelongsToResponse(...arguments);
+      case 'findHasMany':
+        return this.normalizeFindHasManyResponse(...arguments);
+      case 'findMany':
+        return this.normalizeFindManyResponse(...arguments);
+      case 'findQuery':
+        return this.normalizeFindQueryResponse(...arguments);
+      case 'createRecord':
+        return this.normalizeCreateRecordResponse(...arguments);
+      case 'deleteRecord':
+        return this.normalizeDeleteRecordResponse(...arguments);
+      case 'updateRecord':
+        return this.normalizeUpdateRecordResponse(...arguments);
+    }
+  },
+
+  normalizeFindResponse: function(store, primaryTypeClass, payload, id, requestType) {
+    return this.normalizeSingleResponse(...arguments);
+  },
+
+  normalizeFindAllResponse: function(store, primaryTypeClass, payload, id, requestType) {
+    return this.normalizeArrayResponse(...arguments);
+  },
+
+  normalizeFindBelongsToResponse: function(store, primaryTypeClass, payload, id, requestType) {
+    return this.normalizeSingleResponse(...arguments);
+  },
+
+  normalizeFindHasManyResponse: function(store, primaryTypeClass, payload, id, requestType) {
+    return this.normalizeArrayResponse(...arguments);
+  },
+
+  normalizeFindManyResponse: function(store, primaryTypeClass, payload, id, requestType) {
+    return this.normalizeArrayResponse(...arguments);
+  },
+
+  normalizeFindQueryResponse: function(store, primaryTypeClass, payload, id, requestType) {
+    return this.normalizeArrayResponse(...arguments);
+  },
+
+  normalizeCreateRecordResponse: function(store, primaryTypeClass, payload, id, requestType) {
+    return this.normalizeSaveResponse(...arguments);
+  },
+
+  normalizeDeleteRecordResponse: function(store, primaryTypeClass, payload, id, requestType) {
+    return this.normalizeSaveResponse(...arguments);
+  },
+
+  normalizeUpdateRecordResponse: function(store, primaryTypeClass, payload, id, requestType) {
+    return this.normalizeSaveResponse(...arguments);
+  },
+
+  normalizeSaveResponse: function(store, primaryTypeClass, payload, id, requestType) {
+    return this.normalizeSingleResponse(...arguments);
+  },
+
+  normalizeSingleResponse: function(store, primaryTypeClass, payload, id, requestType) {
+    return this._normalizeResponse(...arguments);
+  },
+
+  normalizeArrayResponse: function(store, primaryTypeClass, payload, id, requestType) {
+    return this._normalizeResponse(...arguments);
+  },
+
+  _normalizeResponse: function(store, primaryTypeClass, payload, id, requestType) {
+    let documentHash = {
+      data: null,
+      included: []
+    };
+
+    payload = this.normalizePayload(payload);
+
+    let isSingle = !Ember.isArray(payload);
+
+    if (isSingle) {
+      let { data } = this.normalize(primaryTypeClass, payload);
+      documentHash.data = data;
+    } else {
+      documentHash.data = payload.map((item) => {
+        let { data } = this.normalize(primaryTypeClass, item);
+        return data;
+      });
+    }
+
+    return documentHash;
+  },
+
+
   /**
     Normalizes a part of the JSON payload returned by
     the server. You should override this method, munge the hash
@@ -169,6 +272,88 @@ export default Serializer.extend({
     this.normalizeUsingDeclaredMapping(typeClass, hash);
     this.applyTransforms(typeClass, hash);
     return hash;
+  },
+
+  newNormalize: function(modelClass, resourceHash) {
+    if (!resourceHash) { return null; }
+
+    this.normalizeUsingDeclaredMapping(modelClass, resourceHash);
+
+    let data = {
+      id:            this.extractId(resourceHash),
+      type:          modelClass.modelName,
+      attributes:    this.extractAttributes(modelClass, resourceHash),
+      relationships: this.extractRelationships(modelClass, resourceHash)
+    };
+
+    this.applyTransforms(modelClass, data.attributes);
+
+    return { data };
+  },
+
+  extractId: function(resourceHash) {
+    var primaryKey = get(this, 'primaryKey');
+    var id = resourceHash[primaryKey];
+    return coerceId(id);
+  },
+
+  extractAttributes: function(modelClass, resourceHash) {
+    var attributeKey;
+    var attributes = {};
+
+    modelClass.eachAttribute(function(key) {
+      attributeKey = this.keyForAttribute(key, 'deserialize');
+      if (resourceHash.hasOwnProperty(attributeKey)) {
+        attributes[key] = resourceHash[attributeKey];
+      }
+    }, this);
+
+    return attributes;
+  },
+
+  extractRelationship: function(modelClass, relationshipHash) {
+    if (Ember.isNone(relationshipHash)) { return null; }
+    if (Ember.typeOf(relationshipHash) === 'object') {
+      if (relationshipHash.id) {
+        relationshipHash.id = coerceId(relationshipHash.id);
+      }
+      return relationshipHash;
+    }
+    return { id: coerceId(relationshipHash), type: modelClass.modelName };
+  },
+
+  extractRelationships: function(modelClass, resourceHash) {
+    let relationships = {};
+
+    modelClass.eachRelationship(function(key, relationshipMeta) {
+      let relationship = null;
+      let relationshipKey = this.keyForRelationship(key, relationshipMeta.kind, 'deserialize');
+      if (resourceHash.hasOwnProperty(relationshipKey)) {
+        let data = null;
+        let relationshipHash = resourceHash[relationshipKey];
+        if (relationshipMeta.kind === 'belongsTo') {
+          data = this.extractRelationship(relationshipMeta.type, relationshipHash);
+        } else if (relationshipMeta.kind === 'hasMany') {
+          data = Ember.A(relationshipHash).map(function(item) {
+            return this.extractRelationship(relationshipMeta.type, item);
+          }, this);
+        }
+        relationship = { data };
+      }
+
+      let linkKey = this.keyForLink(key, relationshipMeta.kind);
+      if (resourceHash.links && resourceHash.links.hasOwnProperty(linkKey)) {
+        let related = resourceHash.links[linkKey];
+        relationship = relationship || {};
+        relationship.links = { related };
+      }
+
+      if (relationship) {
+        relationships[key] = relationship;
+      }
+    }, this);
+
+    return relationships;
   },
 
   /**
@@ -1072,6 +1257,10 @@ export default Serializer.extend({
   */
 
   keyForRelationship: function(key, typeClass, method) {
+    return key;
+  },
+
+  keyForLink: function(key, relationshipKind) {
     return key;
   },
 
