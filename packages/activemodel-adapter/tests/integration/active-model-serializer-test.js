@@ -151,6 +151,27 @@ test("normalize links", function() {
   equal(json.links.superVillains, "/api/super_villians/1", "normalize links");
 });
 
+test("Serializer respects `serialize: false` on the attrs hash for a `hasMany` property", function() {
+  expect(1);
+  env.registry.register("serializer:mySerializer", DS.ActiveModelSerializer.extend({
+    attrs: {
+      comments: { serialize: false }
+    }
+  }));
+
+  var superVillian, evilMinion;
+  run(function() {
+    superVillian = env.store.createRecord('super-villain', {first_name: "Tom", last_name: "Dale", home_planet_id: "123"})
+    evilMinion = env.store.createRecord('evil-minion', { name: "Alex", superVillian: superVillian });
+  });
+
+  var serializer = env.container.lookup("serializer:mySerializer");
+  var serializedProperty = serializer.keyForRelationship('evilMinions', 'hasMany');
+
+  var payload = serializer.serialize(superVillian._createSnapshot());
+  ok(!payload.hasOwnProperty(serializedProperty), "Does not add the key to instance");
+});
+
 test("extractSingle", function() {
   env.registry.register('adapter:superVillain', DS.ActiveModelAdapter);
 
