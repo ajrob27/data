@@ -134,9 +134,9 @@ test("normalize links", function() {
 
 test("Serializer respects `serialize: false` on the attrs hash for a `hasMany` property", function() {
   expect(1);
-  env.registry.register("serializer:mySerializer", DS.ActiveModelSerializer.extend({
+  env.registry.register("serializer:superVillian", DS.ActiveModelSerializer.extend({
     attrs: {
-      comments: { serialize: false }
+      evilMinions: { serialize: false }
     }
   }));
 
@@ -145,7 +145,7 @@ test("Serializer respects `serialize: false` on the attrs hash for a `hasMany` p
     evilMinion = env.store.createRecord('evil-minion', { name: "Alex", superVillian: superVillian });
   });
 
-  var serializer = env.container.lookup("serializer:mySerializer");
+  var serializer = env.container.lookup("serializer:superVillian");
   var serializedProperty = serializer.keyForRelationship('evilMinions', 'hasMany');
 
   var payload = serializer.serialize(superVillian._createSnapshot());
@@ -154,18 +154,18 @@ test("Serializer respects `serialize: false` on the attrs hash for a `hasMany` p
 
 test("Serializer respects `serialize: true` on the attrs hash for a `hasMany` property", function() {
   expect(1);
-  env.registry.register("serializer:mySerializer", DS.ActiveModelSerializer.extend({
+  env.registry.register("serializer:superVillian", DS.ActiveModelSerializer.extend({
     attrs: {
-      comments: { serialize: true }
+      evilMinions: { serialize: true }
     }
   }));
 
   run(function() {
     superVillian = env.store.createRecord('super-villain', { first_name: "Tom", last_name: "Dale", home_planet_id: "123" });
-    evilMinion = env.store.createRecord('evil-minion', { name: "Alex", superVillian: superVillian });
+    evilMinion = env.store.createRecord('evil-minion', { name: "Alex", super_villian: superVillian });
   });
 
-  var serializer = env.container.lookup("serializer:mySerializer");
+  var serializer = env.container.lookup("serializer:superVillian");
   var serializedProperty = serializer.keyForRelationship('evilMinions', 'hasMany');
 
   var payload = serializer.serialize(superVillian._createSnapshot());
