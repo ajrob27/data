@@ -1,6 +1,7 @@
 var get = Ember.get;
-var HomePlanet, league, SuperVillain, EvilMinion, YellowMinion, DoomsdayDevice, MediocreVillain, env;
+var HomePlanet, league, SuperVillain, superVillian, EvilMinion, evilMinion, YellowMinion, DoomsdayDevice, MediocreVillain, env;
 var run = Ember.run;
+var superVillian, evilMinion;
 
 module("integration/active_model - ActiveModelSerializer", {
   setup: function() {
@@ -118,26 +119,6 @@ test("normalize", function() {
   });
 });
 
-test("hasMany", function() {
-
-  var superVillian, evilMinion;
-  run(function() {
-    superVillian = env.store.createRecord('super-villain', {first_name: "Tom", last_name: "Dale", home_planet_id: "123"})
-    evilMinion = env.store.createRecord('evil-minion', { name: "Alex", superVillian: superVillian });
-  });
-
-  var json = {};
-
-  env.amsSerializer.serializeHasMany(superVillian._createSnapshot(), json, { key: "evilMinions", options: {} });
-
-  deepEqual(json, {
-    firstName: "Tom",
-    lastName: "Dale",
-    homePlanet: "123",
-    evilMinions: [1]
-  });
-});
-
 test("normalize links", function() {
   var home_planet = {
     id: "1",
@@ -159,9 +140,8 @@ test("Serializer respects `serialize: false` on the attrs hash for a `hasMany` p
     }
   }));
 
-  var superVillian, evilMinion;
   run(function() {
-    superVillian = env.store.createRecord('super-villain', {first_name: "Tom", last_name: "Dale", home_planet_id: "123"})
+    superVillian = env.store.createRecord('super-villain', { first_name: "Tom", last_name: "Dale", home_planet_id: "123" });
     evilMinion = env.store.createRecord('evil-minion', { name: "Alex", superVillian: superVillian });
   });
 
@@ -170,6 +150,26 @@ test("Serializer respects `serialize: false` on the attrs hash for a `hasMany` p
 
   var payload = serializer.serialize(superVillian._createSnapshot());
   ok(!payload.hasOwnProperty(serializedProperty), "Does not add the key to instance");
+});
+
+test("Serializer respects `serialize: true` on the attrs hash for a `hasMany` property", function() {
+  expect(1);
+  env.registry.register("serializer:mySerializer", DS.ActiveModelSerializer.extend({
+    attrs: {
+      comments: { serialize: true }
+    }
+  }));
+
+  run(function() {
+    superVillian = env.store.createRecord('super-villain', { first_name: "Tom", last_name: "Dale", home_planet_id: "123" });
+    evilMinion = env.store.createRecord('evil-minion', { name: "Alex", superVillian: superVillian });
+  });
+
+  var serializer = env.container.lookup("serializer:mySerializer");
+  var serializedProperty = serializer.keyForRelationship('evilMinions', 'hasMany');
+
+  var payload = serializer.serialize(superVillian._createSnapshot());
+  ok(payload.hasOwnProperty(serializedProperty), "Adds the key to instance");
 });
 
 test("extractSingle", function() {
