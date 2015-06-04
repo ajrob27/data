@@ -118,6 +118,26 @@ test("normalize", function() {
   });
 });
 
+test("hasMany", function() {
+
+  var superVillian, evilMinion;
+  run(function() {
+    superVillian = env.store.createRecord('super-villain', {first_name: "Tom", last_name: "Dale", home_planet_id: "123"})
+    evilMinion = env.store.createRecord('evil-minion', { name: "Alex", superVillian: superVillian });
+  });
+
+  var json = {};
+
+  env.amsSerializer.serializeHasMany(superVillian._createSnapshot(), json, { key: "evilMinions", options: {} });
+
+  deepEqual(json, {
+    firstName: "Tom",
+    lastName: "Dale",
+    homePlanet: "123",
+    evilMinions: [1]
+  });
+});
+
 test("normalize links", function() {
   var home_planet = {
     id: "1",
