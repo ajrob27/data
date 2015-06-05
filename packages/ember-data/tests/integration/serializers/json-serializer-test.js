@@ -312,6 +312,7 @@ test('Serializer respects `serialize: true` on the attrs hash for a `hasMany` pr
   });
 
   var serializer = env.container.lookup("serializer:post");
+  console.log(serializer);
   var serializedProperty = serializer.keyForRelationship('comments', 'hasMany');
 
   var payload = serializer.serialize(post._createSnapshot());

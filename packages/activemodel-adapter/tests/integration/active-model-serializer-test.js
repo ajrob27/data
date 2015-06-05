@@ -161,14 +161,17 @@ test("Serializer respects `serialize: true` on the attrs hash for a `hasMany` pr
   }));
 
   run(function() {
-    superVillian = env.store.createRecord('super-villain', { first_name: "Tom", last_name: "Dale", home_planet_id: "123" });
-    evilMinion = env.store.createRecord('evil-minion', { name: "Alex", super_villian: superVillian });
+    superVillian = env.store.push('super-villain', { id: 1, firstName: "Tom", lastName: "Dale", homePlanet: "123" });
+    evilMinion = env.store.push('evil-minion', { id: 1, name: "Alex", superVillian: superVillian });
   });
 
   var serializer = env.container.lookup("serializer:superVillian");
+  console.log(serializer);
   var serializedProperty = serializer.keyForRelationship('evilMinions', 'hasMany');
-
+  console.log(serializedProperty);
   var payload = serializer.serialize(superVillian._createSnapshot());
+  console.log(payload);
+
   ok(payload.hasOwnProperty(serializedProperty), "Adds the key to instance");
 });
 
